@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "x402-seller-starter",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": {
+    // REQUIRED: your Solana wallet. Payments land here.
+    // The Worker refuses to serve paid routes while this is the placeholder,
+    // so a one-click deploy can never silently route money to someone else.
+    "PAY_TO": "YOUR_SOLANA_WALLET_ADDRESS",
+
+    // Price per call. Keep this at or above $0.01.
+    // Sponsored Solana settlement costs the facilitator ~$0.0007 per payment;
+    // below ~$0.01 the gas is a double-digit percentage of the sale, which is
+    // not a sustainable thing to ask a sponsor for.
+    "PRICE": "$0.05",
+
+    // The facilitator that verifies and settles. TWZRD sponsors the Solana gas
+    // and runs a counterparty trust check before accepting the payment.
+    // Swap this for any x402 facilitator - the slot is standard, not a lock-in.
+    "FACILITATOR_URL": "https://intel.twzrd.xyz",
+
+    // Short name is deliberate: x402 core hard-codes ["solana-devnet","solana"]
+    // and rejects the CAIP-2 form ("solana:5eykt4...") outright here.
+    "NETWORK": "solana"
+  }
+}

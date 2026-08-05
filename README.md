@@ -1,0 +1,89 @@
+# x402 seller starter — Cloudflare Workers, real Solana payments
+
+Deploy a working paid API endpoint to your own Cloudflare account. Agents pay it
+over [x402](https://github.com/x402-foundation/x402); you keep the money; the
+gas is sponsored.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/twzrd-sol/x402-seller-starter)
+
+```bash
+curl -i https://<your-worker>.workers.dev/paid/hello
+# HTTP/1.1 402 Payment Required
+```
+
+Set one variable (`PAY_TO`, your Solana wallet) and you are selling.
+
+## Why this template exists
+
+Cloudflare's x402 docs are good, and the stock middleware works. But every
+example in them points at `https://x402.org/facilitator`, and that facilitator
+is **testnet-only** — its `/supported` advertises `base-sepolia`,
+`hedera:testnet`, `stellar:testnet`, and `solana:EtWTRAB…` (devnet). There is no
+Solana **mainnet** kind.
+
+So a seller who follows the docs verbatim and asks for `network: "solana"` gets:
+
+```
+Error: The facilitator did not provide a fee payer for network: solana
+→ HTTP 500
+```
+
+Not a payment page. A 500. You need a facilitator that actually settles Solana
+mainnet, and the middleware's third argument is where you say so:
+
+```ts
+paymentMiddleware(
+  payTo,
+  { "/paid/*": { price: "$0.05", network: "solana" } },
+  { url: "https://intel.twzrd.xyz" },   // ← the facilitator slot
+)
+```
+
+That is the only line in this template that differs from Cloudflare's own
+example. It is a standard seam, not a lock-in — point it anywhere.
+
+## What you get from this facilitator
+
+- **Gas-sponsored settlement.** The `feePayer` is supplied by the facilitator,
+  so your buyers do not need SOL to pay you in USDC.
+- **A counterparty check before you accept money.** `/verify` runs a trust gate
+  against an observed-settlement corpus, so you can refuse payers with
+  wash-shaped or fleet-dominated histories instead of finding out later.
+- **A portable signed receipt** on settle, verifiable offline
+  (`npx twzrd-receipt-verifier`) — you are not asked to trust the scorer.
+
+## Configuration
+
+All in `wrangler.jsonc` under `vars`:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `PAY_TO` | *(placeholder)* | **Required.** Your Solana wallet. The Worker refuses to serve paid routes until you change it, so a one-click deploy can never route your buyers' money to a stranger. |
+| `PRICE` | `$0.05` | Keep at or above **$0.01**. Sponsored settlement costs roughly $0.0007 per payment; below a cent, gas is a double-digit share of the sale, which is not a reasonable thing to ask any sponsor to absorb. |
+| `FACILITATOR_URL` | `https://intel.twzrd.xyz` | Any x402 facilitator. |
+| `NETWORK` | `solana` | Short name is required — x402 core hard-codes `["solana-devnet","solana"]` and rejects the CAIP-2 form (`solana:5eykt4…`) here. |
+
+## Verify before you trust it
+
+```bash
+npm install
+npm run smoke
+```
+
+Boots the Worker in-process against the live facilitator and asserts the paid
+route really 402s, the challenge carries a sponsored Solana requirement, the
+`payTo` is *yours*, and an unset `PAY_TO` is refused. Point it elsewhere to
+compare:
+
+```bash
+FACILITATOR_URL=https://x402.org/facilitator npm run smoke   # fails: testnet-only
+```
+
+## Local development
+
+```bash
+npm run dev      # wrangler dev
+npm run deploy   # wrangler deploy
+```
+
+MIT. Replace `/paid/hello` with whatever you actually sell.
