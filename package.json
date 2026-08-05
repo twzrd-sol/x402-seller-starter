@@ -1,0 +1,24 @@
+{
+  "name": "x402-seller-starter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One-click x402 seller on Cloudflare Workers, settled through a trust-gating facilitator.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "smoke": "tsx scripts/smoke.mts"
+  },
+  "dependencies": {
+    "hono": "^4.13.0",
+    "x402-hono": "^1.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240909.0",
+    "@hono/node-server": "^1.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.90.0"
+  }
+}
