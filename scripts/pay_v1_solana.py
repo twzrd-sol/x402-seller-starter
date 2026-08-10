@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""
+Stranger-style Solana mainnet payer for x402-hono v1 sellers.
+
+Uses only: public URL, Solana RPC, a keypair, and the payment requirements
+from the 402 body. No monorepo imports.
+
+  python3 scripts/pay_v1_solana.py --url http://HOST:8787/paid/hello --keypair /path/to.json
+
+Expects x402-hono style body: { x402Version:1, accepts:[{ maxAmountRequired, payTo, asset, network, extra.feePayer }] }
+Sends X-PAYMENT (base64 PaymentPayload v1) and prints protected response + settlement evidence.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
+from solders.hash import Hash
+from solders.keypair import Keypair
+from solders.message import MessageV0, to_bytes_versioned
+from solders.pubkey import Pubkey
+from solders.signature import Signature
+from solders.transaction import VersionedTransaction
+from spl.token.instructions import (
+    TransferCheckedParams,
+    get_associated_token_address,
+    transfer_checked,
+)
+
+TOKEN_PROGRAM = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+USDC_DECIMALS = 6
+RPC = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
+UA = {"User-Agent": "stranger-x402-payer/1.0", "Accept": "application/json"}
+
+
+def load_keypair(path: str) -> Keypair:
+    raw = json.load(open(path))
+    if isinstance(raw, list):
+        secret = bytes(raw)
+        return Keypair.from_bytes(secret) if len(secret) == 64 else Keypair.from_seed(secret)
+    if isinstance(raw, dict) and raw.get("privateKey"):
+        # agentcash format: base58 seed
+        from solders.keypair import Keypair as KP
+        # scure-style base58 not in solders; use solana if available
+        try:
+            import base58
+
+            seed = base58.b58decode(raw["privateKey"])
+            return Keypair.from_seed(seed[:32])
+        except Exception as e:
+            raise SystemExit(f"need base58 privateKey decode: {e}") from e
+    raise SystemExit(f"unsupported keypair format: {path}")
+
+
+def rpc(method: str, params: list):
+    req = urllib.request.Request(
+        RPC,
+        data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode(),
+        headers={"content-type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        out = json.loads(resp.read())
+    if out.get("error"):
+        raise RuntimeError(out["error"])
+    return out["result"]
+
+
+def fetch_accepts(url: str) -> dict:
+    req = urllib.request.Request(url, headers=UA)
+    try:
+        urllib.request.urlopen(req, timeout=20)
+        raise SystemExit("expected HTTP 402 from paid route")
+    except urllib.error.HTTPError as exc:
+        if exc.code != 402:
+            raise SystemExit(f"expected 402, got {exc.code}: {exc.read()[:300]}")
+        body = json.loads(exc.read())
+        accepts = body.get("accepts") or []
+        if not accepts:
+            raise SystemExit(f"no accepts[] in 402 body: {body}")
+        return accepts[0]
+
+
+def build_tx_b64(accepts: dict, payer: Keypair) -> str:
+    mint = Pubkey.from_string(accepts["asset"])
+    pay_to = Pubkey.from_string(accepts["payTo"])
+    fee_payer = Pubkey.from_string(accepts["extra"]["feePayer"])
+    amount = int(accepts.get("amount") or accepts.get("maxAmountRequired") or 0)
+    if amount <= 0:
+        raise SystemExit("missing amount/maxAmountRequired")
+
+    # x402-hono may omit blockhash/decimals; fetch from chain
+    bh = rpc("getLatestBlockhash", [{"commitment": "confirmed"}])["value"]["blockhash"]
+    blockhash = Hash.from_string(bh)
+
+    ix = transfer_checked(
+        TransferCheckedParams(
+            program_id=TOKEN_PROGRAM,
+            source=get_associated_token_address(payer.pubkey(), mint),
+            mint=mint,
+            dest=get_associated_token_address(pay_to, mint),
+            owner=payer.pubkey(),
+            amount=amount,
+            decimals=USDC_DECIMALS,
+        )
+    )
+    budget = [set_compute_unit_limit(30_000), set_compute_unit_price(10_000)]
+    msg = MessageV0.try_compile(fee_payer, [*budget, ix], [], blockhash)
+    wire = to_bytes_versioned(msg)
+    sigs = [
+        payer.sign_message(wire) if key == payer.pubkey() else Signature.default()
+        for key in msg.account_keys[: msg.header.num_required_signatures]
+    ]
+    payer_index = list(msg.account_keys[: msg.header.num_required_signatures]).index(payer.pubkey())
+    assert sigs[payer_index].verify(payer.pubkey(), wire)
+    return base64.b64encode(bytes(VersionedTransaction.populate(msg, sigs))).decode()
+
+
+def encode_x_payment(accepts: dict, tx_b64: str) -> str:
+    """Base64 PaymentPayload for X-PAYMENT / PAYMENT-SIGNATURE.
+
+    x402-hono emits a v1-shaped 402 body, but the TWZRD facilitator validates a
+    PaymentPayload that requires ``accepted`` (v2 schema). Include both so the
+    seller middleware can forward a payload intel will verify.
+    """
+    amount = str(accepts.get("amount") or accepts.get("maxAmountRequired") or "0")
+    accepted = {
+        "scheme": accepts["scheme"],
+        "network": accepts["network"],
+        "asset": accepts["asset"],
+        "amount": amount,
+        "maxAmountRequired": amount,
+        "payTo": accepts["payTo"],
+        "maxTimeoutSeconds": accepts.get("maxTimeoutSeconds", 60),
+        "extra": accepts.get("extra") or {},
+    }
+    # x402-hono (seller) validates x402Version==1 on X-PAYMENT.
+    # TWZRD facilitator requires `accepted` on PaymentPayload — include both.
+    payload = {
+        "x402Version": 1,
+        "scheme": accepts["scheme"],
+        "network": accepts["network"],
+        "payload": {"transaction": tx_b64},
+        "accepted": accepted,
+    }
+    return base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--url", required=True, help="paid resource URL")
+    ap.add_argument("--keypair", required=True, help="solana keypair path")
+    ap.add_argument("--dry-run", action="store_true", help="build payment only, do not send")
+    args = ap.parse_args()
+
+    payer = load_keypair(args.keypair)
+    print(f"payer={payer.pubkey()}")
+    print(f"url={args.url}")
+
+    accepts = fetch_accepts(args.url)
+    print(
+        "accepts",
+        {
+            "network": accepts.get("network"),
+            "scheme": accepts.get("scheme"),
+            "amount": accepts.get("amount") or accepts.get("maxAmountRequired"),
+            "payTo": accepts.get("payTo"),
+            "feePayer": (accepts.get("extra") or {}).get("feePayer"),
+            "asset": accepts.get("asset"),
+        },
+    )
+
+    tx_b64 = build_tx_b64(accepts, payer)
+    header = encode_x_payment(accepts, tx_b64)
+    print(f"x_payment_header_len={len(header)}")
+
+    if args.dry_run:
+        print("dry-run: payment constructed")
+        return
+
+    req = urllib.request.Request(
+        args.url,
+        headers={**UA, "X-PAYMENT": header, "PAYMENT-SIGNATURE": header},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            status = resp.status
+            raw = resp.read()
+            headers = {k.lower(): v for k, v in resp.headers.items()}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        print(f"SETTLE_HTTP_{exc.code}", body[:1500])
+        sys.exit(3)
+
+    print(f"SETTLE_HTTP_{status}")
+    try:
+        out = json.loads(raw)
+        print(json.dumps(out, indent=2)[:2000])
+    except Exception:
+        print(raw[:500])
+    if "x-payment-response" in headers:
+        print("x_payment_response_present=true")
+        try:
+            pr = json.loads(base64.b64decode(headers["x-payment-response"]))
+            print("payment_response", json.dumps(pr, indent=2)[:800])
+        except Exception as e:
+            print("payment_response_decode_err", e)
+
+
+if __name__ == "__main__":
+    main()

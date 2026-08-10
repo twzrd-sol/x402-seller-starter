@@ -105,7 +105,37 @@ npm run deploy   # wrangler deploy
 |-------|--------|
 | Challenge construction end-to-end via `x402-hono` + TWZRD facilitator | **Proven** (`npm run smoke`) |
 | Stock `x402.org/facilitator` cannot feePayer `network: "solana"` | **Proven** (`npm run smoke:contrast`) |
-| Full USDC settle through a deployed Worker + independent payer | **Not yet** — needs a funded buyer against a live Worker URL |
+| Full USDC settle through a Worker + independent payer (USDC mainnet) | **Proven** 2026-08-10 — see [Close the payment loop](#close-the-payment-loop) |
+
+## Close the payment loop
+
+Once the challenge wedge holds (`npm run smoke:contrast`), prove a real settle:
+
+```bash
+# 1. Deploy (or expose local wrangler dev)
+#    wrangler.jsonc → set PAY_TO to YOUR wallet, then:
+npm run deploy
+# or: npm run dev   # then use a public URL / tunnel to that host
+
+# 2. Fund a buyer keypair with mainnet USDC (>= PRICE) on the classic SPL mint
+#    EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+#    Buyer does not need SOL for the payment itself (facilitator sponsors gas).
+
+# 3. Pay from only the public surface (no monorepo):
+python3 scripts/pay_v1_solana.py \
+  --url https://YOUR_WORKER.workers.dev/paid/hello \
+  --keypair /path/to/buyer.json
+```
+
+Expected success:
+
+- HTTP **200** protected body (`ok: true`, content, `paidAt`)
+- Response header `x-payment-response` with `success: true`, settlement `transaction` signature, and (via TWZRD facilitator) a V6 `twzrd_receipt`
+- On-chain: USDC `transferChecked` of `maxAmountRequired` from payer ATA → `PAY_TO` ATA, feePayer = facilitator sponsor
+
+Deliberate failure check (optional): build a payment whose transfer amount ≠ challenge amount → expect **402** `policy:transfer_amount_mismatch`, not the protected resource.
+
+Requires: `python3`, `solders`, `spl` / `solana` packages (`pip install solders solana base58`).
 
 ## Sponsor gas (operators reading this as a TWZRD internal)
 
