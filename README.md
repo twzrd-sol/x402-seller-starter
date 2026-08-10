@@ -71,13 +71,26 @@ npm run smoke
 ```
 
 Boots the Worker in-process against the live facilitator and asserts the paid
-route really 402s, the challenge carries a sponsored Solana requirement, the
-`payTo` is *yours*, and an unset `PAY_TO` is refused. Point it elsewhere to
-compare:
+route really 402s, the challenge carries a **sponsored Solana mainnet**
+requirement (`network: "solana"`, not devnet), the `payTo` is *yours*, and an
+unset `PAY_TO` is refused.
+
+Prove the wedge (TWZRD works, stock Cloudflare default does not):
+
+```bash
+npm run smoke:contrast
+# TWZRD must PASS; x402.org/facilitator must FAIL (no feePayer for network: solana)
+```
+
+Or one-off:
 
 ```bash
 FACILITATOR_URL=https://x402.org/facilitator npm run smoke   # fails: testnet-only
 ```
+
+Re-verified 2026-08-07: intel `/supported` advertises both `solana` and
+`solana:5eykt4…` with feePayer `4LkEFj…`; x402.org `/supported` still has only
+Solana **devnet** kinds (no mainnet `solana`).
 
 ## Local development
 
@@ -85,5 +98,19 @@ FACILITATOR_URL=https://x402.org/facilitator npm run smoke   # fails: testnet-on
 npm run dev      # wrangler dev
 npm run deploy   # wrangler deploy
 ```
+
+## What is proven vs not
+
+| Claim | Status |
+|-------|--------|
+| Challenge construction end-to-end via `x402-hono` + TWZRD facilitator | **Proven** (`npm run smoke`) |
+| Stock `x402.org/facilitator` cannot feePayer `network: "solana"` | **Proven** (`npm run smoke:contrast`) |
+| Full USDC settle through a deployed Worker + independent payer | **Not yet** — needs a funded buyer against a live Worker URL |
+
+## Sponsor gas (operators reading this as a TWZRD internal)
+
+Every 402 from intel advertises feePayer `4LkEFj…`. Traction on this template
+increases sponsored settle load. Keep the sponsor funded; empty sponsor does
+not fail closed on challenge construction — it fails later at settle.
 
 MIT. Replace `/paid/hello` with whatever you actually sell.
