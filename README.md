@@ -1,5 +1,10 @@
 # x402 seller starter — Cloudflare Workers, real Solana payments
 
+**Role: minimal wedge (x402-hono v1).** Matches Cloudflare tutorial shape —
+one middleware call, facilitator URL swap. For a **production Solana storefront**
+(x402 **v2**, catalog, OpenAPI, in-Worker settle-guard, tests), use
+[x402-solana-starter](https://github.com/twzrd-sol/x402-solana-starter).
+
 Deploy a working paid API endpoint to your own Cloudflare account. Agents pay it
 over [x402](https://github.com/x402-foundation/x402); you keep the money; the
 gas is sponsored.
@@ -142,5 +147,12 @@ Requires: `python3`, `solders`, `spl` / `solana` packages (`pip install solders 
 Every 402 from intel advertises feePayer `4LkEFj…`. Traction on this template
 increases sponsored settle load. Keep the sponsor funded; empty sponsor does
 not fail closed on challenge construction — it fails later at settle.
+
+## Related starters
+
+| Repo | Role | Stack |
+|---|---|---|
+| **This repo** | Minimal CF-tutorial wedge | `x402-hono` v1 + facilitator URL |
+| [x402-solana-starter](https://github.com/twzrd-sol/x402-solana-starter) | Full Solana storefront | `@x402/hono` + `@x402/svm` v2 + settle-guard |
 
 MIT. Replace `/paid/hello` with whatever you actually sell.
