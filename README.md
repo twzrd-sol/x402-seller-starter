@@ -72,10 +72,13 @@ All in `wrangler.jsonc` under `vars`:
 
 ```bash
 npm install
-npm run smoke
+npm test          # hermetic unit tests (PAY_TO guard, free route, defaults) — no network
+npm run smoke     # live facilitator 402 + mainnet feePayer (needs network)
 ```
 
-Boots the Worker in-process against the live facilitator and asserts the paid
+`npm test` pins the fail-closed money-routing rules (placeholder / non-base58
+`PAY_TO`, mainnet short-name defaults) without calling a facilitator. `npm run smoke`
+boots the Worker in-process against the live facilitator and asserts the paid
 route really 402s, the challenge carries a **sponsored Solana mainnet**
 requirement (`network: "solana"`, not devnet), the `payTo` is *yours*, and an
 unset `PAY_TO` is refused.
