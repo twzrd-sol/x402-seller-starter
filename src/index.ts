@@ -12,7 +12,12 @@
  */
 import { Hono } from "hono";
 import { paymentMiddleware } from "x402-hono";
-import { checkPayTo, DEFAULTS } from "./payTo.js";
+import {
+  resolveFacilitatorUrl,
+  resolveNetwork,
+  resolvePrice,
+  validatePayTo,
+} from "./payTo.js";
 
 export type Env = {
   /** Your Solana wallet. Payments land here. REQUIRED - the template refuses to run on the placeholder. */
@@ -25,13 +30,19 @@ export type Env = {
   NETWORK: string;
 };
 
-const app = new Hono<{ Bindings: Env }>();
+type Variables = {
+  /** Normalized (trimmed) PAY_TO from validatePayTo — never pass raw env to middleware. */
+  payTo: string;
+};
+
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 app.use("*", async (c, next) => {
-  const err = checkPayTo(c.env.PAY_TO);
-  if (err) {
-    return c.json(err, 500);
+  const v = validatePayTo(c.env.PAY_TO);
+  if (!v.ok) {
+    return c.json(v.body, v.status);
   }
+  c.set("payTo", v.payTo);
   return next();
 });
 
@@ -42,16 +53,19 @@ app.use("*", async (c, next) => {
 // though the runtime accepts it (see `npm run smoke` - a live 402 comes back
 // with this exact wallet in payTo). The middleware's types are EVM-first; the
 // protocol is not. Remove the casts only when upstream widens the type.
+//
+// Use c.get("payTo") — the trimmed value from validatePayTo — not c.env.PAY_TO,
+// so padded env vars cannot diverge from the validated destination.
 app.use("/paid/*", async (c, next) =>
   paymentMiddleware(
-    c.env.PAY_TO as never,
+    c.get("payTo") as never,
     {
       "/paid/*": {
-        price: c.env.PRICE || DEFAULTS.PRICE,
-        network: (c.env.NETWORK || DEFAULTS.NETWORK) as never,
+        price: resolvePrice(c.env.PRICE),
+        network: resolveNetwork(c.env.NETWORK) as never,
       },
     },
-    { url: (c.env.FACILITATOR_URL || DEFAULTS.FACILITATOR_URL) as never },
+    { url: resolveFacilitatorUrl(c.env.FACILITATOR_URL) as never },
   )(c, next),
 );
 
@@ -68,9 +82,9 @@ app.get("/", (c) =>
     ok: true,
     what: "x402 seller on Cloudflare Workers, settled through a trust-gating facilitator.",
     paid_route: "/paid/hello",
-    facilitator: c.env.FACILITATOR_URL || DEFAULTS.FACILITATOR_URL,
-    network: c.env.NETWORK || DEFAULTS.NETWORK,
-    price: c.env.PRICE || DEFAULTS.PRICE,
+    facilitator: resolveFacilitatorUrl(c.env.FACILITATOR_URL),
+    network: resolveNetwork(c.env.NETWORK),
+    price: resolvePrice(c.env.PRICE),
     try_it: "curl -i " + new URL(c.req.url).origin + "/paid/hello   # -> 402 with payment requirements",
   }),
 );
