@@ -1,13 +1,18 @@
 /**
  * Proves the template actually sells something before anyone deploys it.
  *
- * Boots the Worker in-process and asserts the three things a one-click deploy
+ * Boots the Worker in-process and asserts the things a one-click deploy
  * can get wrong in ways the deployer would not notice:
  *   1. the paid route really returns a 402 (not a 500, not a free 200)
  *   2. the challenge carries a *sponsored* Solana **mainnet** requirement
  *      (network exactly "solana", not solana-devnet / CAIP-2-only)
  *   3. an unset PAY_TO is refused loudly, so a fresh deploy can never route a
  *      stranger's money to the template's placeholder wallet
+ *   4. changing PRICE actually changes the settled amount - nothing else in
+ *      this repo's test suite (hermetic or live) verifies this; the hermetic
+ *      suite pins the PAY_TO guard, and the rest of this script always ran
+ *      with the same hardcoded $0.05, so a bug that silently ignored PRICE
+ *      would have passed every other check
  *
  * Run: npm run smoke        (uses the live TWZRD facilitator by default)
  *      FACILITATOR_URL=... npm run smoke
@@ -84,6 +89,21 @@ if (paidStatus === 402 && paidBody) {
 // 3. an unconfigured deploy must refuse, not misroute money
 const unset = await call("/paid/hello", { ...env, PAY_TO: PLACEHOLDER_PAY_TO });
 check("placeholder PAY_TO is refused", unset.status === 500, `got ${unset.status}`);
+
+// 4. PRICE actually drives the settled amount, not just the default $0.05
+// every other check above happens to use.
+try {
+  const custom = await call("/paid/hello", { ...env, PRICE: "$0.10" });
+  const customBody: any = custom.status === 402 ? await custom.json() : null;
+  const amount = customBody?.accepts?.[0]?.maxAmountRequired;
+  check(
+    "PRICE=$0.10 produces maxAmountRequired=100000 (not the $0.05 default)",
+    custom.status === 402 && amount === "100000",
+    `status=${custom.status} maxAmountRequired=${amount}`,
+  );
+} catch (err: any) {
+  check("PRICE=$0.10 produces maxAmountRequired=100000 (not the $0.05 default)", false, `threw: ${String(err?.message || err).slice(0, 120)}`);
+}
 
 console.log(failures === 0 ? "\nOK - template sells." : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);
