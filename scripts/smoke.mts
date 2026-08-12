@@ -14,10 +14,10 @@
  *      npm run smoke:contrast   (TWZRD must pass; x402.org/facilitator must fail)
  */
 import app from "../src/index.js";
+import { BASE58_SOLANA, DEFAULTS, PLACEHOLDER_PAY_TO } from "../src/payTo.js";
 
-const FACILITATOR = process.env.FACILITATOR_URL || "https://intel.twzrd.xyz";
+const FACILITATOR = process.env.FACILITATOR_URL || DEFAULTS.FACILITATOR_URL;
 const REAL_WALLET = process.env.PAY_TO || "GFpLvocNdEjnSsLH3VJQL6wGcjGxTbUBrj6fqN3Qe1Gs";
-const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 const env = {
   PAY_TO: REAL_WALLET,
@@ -72,7 +72,7 @@ if (paidStatus === 402 && paidBody) {
   const feePayer = accepts?.extra?.feePayer;
   check(
     "facilitator supplied a gas sponsor (feePayer)",
-    Boolean(feePayer) && BASE58.test(String(feePayer)),
+    Boolean(feePayer) && BASE58_SOLANA.test(String(feePayer)),
     feePayer ? `feePayer=${feePayer}` : "MISSING - facilitator did not answer /supported for solana mainnet",
   );
 } else {
@@ -82,7 +82,7 @@ if (paidStatus === 402 && paidBody) {
 }
 
 // 3. an unconfigured deploy must refuse, not misroute money
-const unset = await call("/paid/hello", { ...env, PAY_TO: "YOUR_SOLANA_WALLET_ADDRESS" });
+const unset = await call("/paid/hello", { ...env, PAY_TO: PLACEHOLDER_PAY_TO });
 check("placeholder PAY_TO is refused", unset.status === 500, `got ${unset.status}`);
 
 console.log(failures === 0 ? "\nOK - template sells." : `\n${failures} FAILED`);

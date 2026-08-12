@@ -11,5 +11,5 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "scripts/**/*.mts"]
+  "include": ["src/**/*.ts", "scripts/**/*.mts", "test/**/*.ts", "vitest.config.ts"]
 }
