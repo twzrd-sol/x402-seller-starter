@@ -72,6 +72,16 @@ All in `wrangler.jsonc` under `vars`:
 
 ```bash
 npm install
+npm test                 # offline unit tests (pay-to guards + free route)
+npm run typecheck
+npm run smoke            # live facilitator 402 (needs network)
+```
+
+`npm test` covers money-routing guards offline: placeholder / empty / non-base58
+`PAY_TO` must 500, and free discovery must reflect env when configured. Live
+402 shape (sponsored mainnet `feePayer`) stays in smoke — it needs the facilitator.
+
+```bash
 npm run smoke
 ```
 
@@ -100,59 +110,20 @@ Solana **devnet** kinds (no mainnet `solana`).
 ## Local development
 
 ```bash
-npm run dev      # wrangler dev
-npm run deploy   # wrangler deploy
+npm install
+# set PAY_TO in wrangler.jsonc to your base58 wallet
+npm run dev
+curl -s http://localhost:8787/
+curl -si http://localhost:8787/paid/hello   # expect 402
 ```
 
-## What is proven vs not
+## Sibling templates
 
-| Claim | Status |
-|-------|--------|
-| Challenge construction end-to-end via `x402-hono` + TWZRD facilitator | **Proven** (`npm run smoke`) |
-| Stock `x402.org/facilitator` cannot feePayer `network: "solana"` | **Proven** (`npm run smoke:contrast`) |
-| Full USDC settle through a Worker + independent payer (USDC mainnet) | **Proven** 2026-08-10 — see [Close the payment loop](#close-the-payment-loop) |
+| Repo | Role |
+|---|---|
+| **This** (`x402-seller-starter`) | Minimal v1 wedge — tutorial shape, one paid route |
+| [`x402-solana-starter`](https://github.com/twzrd-sol/x402-solana-starter) | Production v2 storefront — catalog, OpenAPI, settle-guard, full test suite |
 
-## Close the payment loop
+## License
 
-Once the challenge wedge holds (`npm run smoke:contrast`), prove a real settle:
-
-```bash
-# 1. Deploy (or expose local wrangler dev)
-#    wrangler.jsonc → set PAY_TO to YOUR wallet, then:
-npm run deploy
-# or: npm run dev   # then use a public URL / tunnel to that host
-
-# 2. Fund a buyer keypair with mainnet USDC (>= PRICE) on the classic SPL mint
-#    EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
-#    Buyer does not need SOL for the payment itself (facilitator sponsors gas).
-
-# 3. Pay from only the public surface (no monorepo):
-python3 scripts/pay_v1_solana.py \
-  --url https://YOUR_WORKER.workers.dev/paid/hello \
-  --keypair /path/to/buyer.json
-```
-
-Expected success:
-
-- HTTP **200** protected body (`ok: true`, content, `paidAt`)
-- Response header `x-payment-response` with `success: true`, settlement `transaction` signature, and (via TWZRD facilitator) a V6 `twzrd_receipt`
-- On-chain: USDC `transferChecked` of `maxAmountRequired` from payer ATA → `PAY_TO` ATA, feePayer = facilitator sponsor
-
-Deliberate failure check (optional): build a payment whose transfer amount ≠ challenge amount → expect **402** `policy:transfer_amount_mismatch`, not the protected resource.
-
-Requires: `python3`, `solders`, `spl` / `solana` packages (`pip install solders solana base58`).
-
-## Sponsor gas (operators reading this as a TWZRD internal)
-
-Every 402 from intel advertises feePayer `4LkEFj…`. Traction on this template
-increases sponsored settle load. Keep the sponsor funded; empty sponsor does
-not fail closed on challenge construction — it fails later at settle.
-
-## Related starters
-
-| Repo | Role | Stack |
-|---|---|---|
-| **This repo** | Minimal CF-tutorial wedge | `x402-hono` v1 + facilitator URL |
-| [x402-solana-starter](https://github.com/twzrd-sol/x402-solana-starter) | Full Solana storefront | `@x402/hono` + `@x402/svm` v2 + settle-guard |
-
-MIT. Replace `/paid/hello` with whatever you actually sell.
+MIT (see repository).
