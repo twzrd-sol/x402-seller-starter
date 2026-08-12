@@ -97,6 +97,27 @@ Re-verified 2026-08-07: intel `/supported` advertises both `solana` and
 `solana:5eykt4…` with feePayer `4LkEFj…`; x402.org `/supported` still has only
 Solana **devnet** kinds (no mainnet `solana`).
 
+## Test suite
+
+```bash
+npm test
+```
+
+14 tests across three files:
+
+| File | Covers |
+|---|---|
+| `test/pay-to-validation.test.ts` | The `PAY_TO` guard middleware — unset, placeholder, whitespace-only, non-base58, wrong-length, and the valid-passthrough case. Fully offline, no facilitator involved. |
+| `test/free-route.test.ts` | `GET /` — payload shape, default fallback for unset `PRICE`/`FACILITATOR_URL`/`NETWORK`, and that `try_it` is built from the request's own origin rather than hardcoded. |
+| `test/paid-route.test.ts` | `GET /paid/hello` — 402 challenge shape, price reflects the configured `PRICE`, and the paid content is never served without a payment header. Calls the **live** TWZRD facilitator to build the real challenge (same convention as the `x402-solana-starter` sibling template) rather than mocking `x402-hono`'s internals. |
+
+One behavior worth knowing if you're extending this template: the `PAY_TO`
+guard is registered on `app.use("*", ...)`, so it applies to **every** route,
+including the free `/` discovery route — not just `/paid/*`. That means `curl
+/` also 500s until `PAY_TO` is configured. This is current, intentional-looking
+behavior (tested as such above), not a bug this PR fixes — flagging it in case
+a future change wants the discovery route to work unconditionally.
+
 ## Local development
 
 ```bash
