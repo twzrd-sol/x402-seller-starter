@@ -72,7 +72,8 @@ All in `wrangler.jsonc` under `vars`:
 
 ```bash
 npm install
-npm run smoke
+npm test          # offline unit tests (no network)
+npm run smoke     # live facilitator: 402 + feePayer + misconfig guard
 ```
 
 Boots the Worker in-process against the live facilitator and asserts the paid

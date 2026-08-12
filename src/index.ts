@@ -12,8 +12,14 @@
  */
 import { Hono } from "hono";
 import { paymentMiddleware } from "x402-hono";
+import {
+  resolveFacilitatorUrl,
+  resolveNetwork,
+  resolvePrice,
+} from "./defaults.js";
+import { validatePayTo } from "./pay-to.js";
 
-type Env = {
+export type Env = {
   /** Your Solana wallet. Payments land here. REQUIRED - the template refuses to run on the placeholder. */
   PAY_TO: string;
   /** Price per call, e.g. "$0.05". Keep >= $0.01: below that, sponsored gas costs more than the sale is worth. */
@@ -24,33 +30,12 @@ type Env = {
   NETWORK: string;
 };
 
-// A wallet-shaped placeholder we ship so the config is self-documenting. If it
-// survives to runtime the operator never set PAY_TO, and every payment would go
-// to a stranger - so we fail loudly instead of silently misrouting their money.
-const PLACEHOLDER_PAY_TO = "YOUR_SOLANA_WALLET_ADDRESS";
-const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-
 const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", async (c, next) => {
-  const payTo = (c.env.PAY_TO || "").trim();
-  if (!payTo || payTo === PLACEHOLDER_PAY_TO) {
-    return c.json(
-      {
-        error: "pay_to_not_configured",
-        detail:
-          "Set PAY_TO to your own Solana wallet before serving paid routes. " +
-          "Left unset, every payment would be routed to the template's placeholder.",
-        how: "wrangler.jsonc -> vars.PAY_TO, or the Cloudflare dashboard -> Settings -> Variables",
-      },
-      500,
-    );
-  }
-  if (!BASE58.test(payTo)) {
-    return c.json(
-      { error: "pay_to_not_base58", received: payTo, detail: "PAY_TO must be a base58 Solana address." },
-      500,
-    );
+  const v = validatePayTo(c.env.PAY_TO);
+  if (!v.ok) {
+    return c.json(v.body, v.status);
   }
   return next();
 });
@@ -65,8 +50,13 @@ app.use("*", async (c, next) => {
 app.use("/paid/*", async (c, next) =>
   paymentMiddleware(
     c.env.PAY_TO as never,
-    { "/paid/*": { price: c.env.PRICE || "$0.05", network: (c.env.NETWORK || "solana") as never } },
-    { url: (c.env.FACILITATOR_URL || "https://intel.twzrd.xyz") as never },
+    {
+      "/paid/*": {
+        price: resolvePrice(c.env.PRICE),
+        network: resolveNetwork(c.env.NETWORK) as never,
+      },
+    },
+    { url: resolveFacilitatorUrl(c.env.FACILITATOR_URL) as never },
   )(c, next),
 );
 
@@ -83,9 +73,9 @@ app.get("/", (c) =>
     ok: true,
     what: "x402 seller on Cloudflare Workers, settled through a trust-gating facilitator.",
     paid_route: "/paid/hello",
-    facilitator: c.env.FACILITATOR_URL || "https://intel.twzrd.xyz",
-    network: c.env.NETWORK || "solana",
-    price: c.env.PRICE || "$0.05",
+    facilitator: resolveFacilitatorUrl(c.env.FACILITATOR_URL),
+    network: resolveNetwork(c.env.NETWORK),
+    price: resolvePrice(c.env.PRICE),
     try_it: "curl -i " + new URL(c.req.url).origin + "/paid/hello   # -> 402 with payment requirements",
   }),
 );
