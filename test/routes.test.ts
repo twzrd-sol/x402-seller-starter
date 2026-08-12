@@ -33,8 +33,6 @@ describe("GET / (free discovery)", () => {
   });
 
   it("still runs the PAY_TO guard on free routes (misconfig fails closed)", async () => {
-    // Middleware is app-wide (`*`), not paid-only — same fail-closed money-routing
-    // rule whether the buyer hits / or /paid/*.
     const res = await app.request(
       "https://example.test/",
       {},
@@ -43,6 +41,15 @@ describe("GET / (free discovery)", () => {
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("pay_to_not_configured");
+  });
+
+  it("accepts whitespace-padded PAY_TO on free route (normalized by validatePayTo)", async () => {
+    const res = await app.request(
+      "https://example.test/",
+      {},
+      fakeEnv({ PAY_TO: `  ${TEST_PAY_TO}  ` }),
+    );
+    expect(res.status).toBe(200);
   });
 });
 
@@ -82,19 +89,22 @@ describe("PAY_TO guard on routes (no live facilitator)", () => {
   });
 
   it("valid PAY_TO shape is not rejected by the guard (may proceed to middleware)", async () => {
-    // We do NOT assert 402 here — that requires a live facilitator /supported
-    // response (see `npm run smoke`). Hermetic tests only pin the guard path.
-    // A network error or 402 both prove we passed checkPayTo.
+    // No 402 assert — live facilitator is npm run smoke only.
     const res = await app.request(
       "https://example.test/paid/hello",
       {},
       fakeEnv({ PAY_TO: TEST_PAY_TO }),
     );
     expect(res.status).not.toBe(500);
-    if (res.status === 500) {
-      const body = await res.json();
-      expect(body).not.toMatchObject({ error: "pay_to_not_configured" });
-      expect(body).not.toMatchObject({ error: "pay_to_not_base58" });
-    }
+  });
+
+  it("whitespace-padded valid PAY_TO is not rejected (middleware gets trimmed payTo)", async () => {
+    const res = await app.request(
+      "https://example.test/paid/hello",
+      {},
+      fakeEnv({ PAY_TO: `  ${TEST_PAY_TO}  ` }),
+    );
+    // Guard must accept; 500 with pay_to_* would mean trim was not applied.
+    expect(res.status).not.toBe(500);
   });
 });
