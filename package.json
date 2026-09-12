@@ -13,7 +13,7 @@
     "smoke:contrast": "bash scripts/contrast.sh"
   },
   "dependencies": {
-    "hono": "^4.13.0",
+    "hono": "^4.13.7",
     "x402-hono": "^1.2.0"
   },
   "devDependencies": {
