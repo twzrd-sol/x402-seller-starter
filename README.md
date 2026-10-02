@@ -178,7 +178,7 @@ python3 scripts/pay_v1_solana.py \
 Expected success:
 
 - HTTP **200** protected body (`ok: true`, content, `paidAt`)
-- Response header `x-payment-response` with `success: true`, settlement `transaction` signature, and (via TWZRD facilitator) a V6 `twzrd_receipt`
+- Response header `x-payment-response` with `success: true`, settlement `transaction` signature, and (via TWZRD facilitator) a V7 `twzrd_receipt`
 - On-chain: USDC `transferChecked` of `maxAmountRequired` from payer ATA → `PAY_TO` ATA, feePayer = facilitator sponsor
 
 Deliberate failure check (optional): build a payment whose transfer amount ≠ challenge amount → expect **402** `policy:transfer_amount_mismatch`, not the protected resource.
